@@ -101,6 +101,26 @@ def points2rad(center, pos):
   diffY = center[1] - pos[1]
   return -math.atan2(diffY, diffX) - (math.pi/2)
 
+
+
+def smoothPoints(index: int):
+  for i in range(index+1, len(curveEditPoints)):
+    controlPointPos = curveEditPoints[i-1]
+    nodePos = nodes[i]
+    curveEditPoints[i] = (
+      2*nodePos[0] - controlPointPos[0],
+      2*nodePos[1] - controlPointPos[1]
+    )
+  for i in range(0, index):
+    controlPointPos = curveEditPoints[index-i]
+    nodePos = nodes[index-i]
+    curveEditPoints[index-i-1] = (
+      2*nodePos[0] - controlPointPos[0],
+      2*nodePos[1] - controlPointPos[1]
+    )
+
+
+
 class pathEditor:
   name = "Path Editor"
   
@@ -149,6 +169,9 @@ class pathEditor:
     clickType, clickIndex = getElemAt(pos)
     if clickType == -1:
       pass
+    elif clickType == 1:
+      smoothPoints(clickIndex)
+      refresh()
     elif clickType == 0:
         if clickIndex > 0:
           if clickIndex < len(nodes)-1:
