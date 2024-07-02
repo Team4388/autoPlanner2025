@@ -47,23 +47,29 @@ class MainWindow(QMainWindow):
         self.handles = []
         self.dragging_handle = False
         self.dragging_handle_index = -1
+        self.dragging_robot = False
+        self.dragging_robot_index = -1
 
     def mousePressEvent(self, event: QMouseEvent):
         pos = self.image_label.mapFrom(self, event.position().toPoint())
         x, y = pos.x(), pos.y()
         
         if 0 <= x < self.pixmap.width() and 0 <= y < self.pixmap.height():
-            if event.button() == Qt.LeftButton:
+            if event.button() == Qt.RightButton:
+                self.coordinates = np.vstack((self.coordinates, [x, y]))
+                if len(self.coordinates) >= 2:
+                    self.calculate_handle_pos()
+                self.draw_scene()
+            elif event.button() == Qt.LeftButton:
                 handle_index = self.is_point_in_handle(x, y)
                 if handle_index != -1:
                     self.dragging_handle = True
                     self.dragging_handle_index = handle_index
                 else:
-                    self.coordinates = np.vstack((self.coordinates, [x, y]))
-                    if len(self.coordinates) >= 2:
-                        self.calculate_handle_pos()
-            elif event.button() == Qt.RightButton:
-                self.draw_scene()
+                    robot_index = self.is_point_in_robot(x, y)
+                    if robot_index != -1:
+                        self.dragging_robot = True
+                        self.dragging_robot_index = robot_index
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.dragging_handle:
@@ -71,16 +77,31 @@ class MainWindow(QMainWindow):
             x, y = pos.x(), pos.y()
             self.handles[self.dragging_handle_index] = QPoint(x, y)
             self.draw_scene()
+        elif self.dragging_robot:
+            pos = self.image_label.mapFrom(self, event.position().toPoint())
+            x, y = pos.x(), pos.y()
+            self.coordinates[self.dragging_robot_index] = [x, y]
+            self.calculate_handle_pos()
+            self.draw_scene()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:
             self.dragging_handle = False
             self.dragging_handle_index = -1
+            self.dragging_robot = False
+            self.dragging_robot_index = -1
 
     def is_point_in_handle(self, x, y):
         for i, handle in enumerate(self.handles):
             if (abs(x - handle.x()) <= self.handle_size // 2 and
                 abs(y - handle.y()) <= self.handle_size // 2):
+                return i
+        return -1
+
+    def is_point_in_robot(self, x, y):
+        for i, (robot_x, robot_y) in enumerate(self.coordinates):
+            if (abs(x - robot_x) <= self.robot_size // 2 and
+                abs(y - robot_y) <= self.robot_size // 2):
                 return i
         return -1
     
@@ -124,7 +145,7 @@ class MainWindow(QMainWindow):
                         self.handle_size,
                         self.handle_size
                     )
-                    painter.setBrush(Qt.NoBrush)  # Reset to no brush after drawing handle
+                    painter.setBrush(Qt.NoBrush)
                 else:
                     painter.drawLine(start, end)
 
