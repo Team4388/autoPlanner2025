@@ -1,112 +1,93 @@
-import math
-from copy import copy
-
-import pygame as pg
-from pygame.locals import *
-from sys import exit
+import sys
+import os
 import numpy as np
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QPixmap, QMouseEvent, QPainter, QPen
+from PySide6.QtCore import Qt, QPoint, QRect
 
-import src.render as render
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
 
-import src.pathEditor as pathEditor
-import src.buttonEditor as buttonEditor
-import src.export as export
+        self.setWindowTitle("Auto Planner")
 
-doubleClickDuration = 200
+        #Set background image to the field
+        self.image_label = QLabel(self)
 
-pg.init()
-pg.font.init()
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        image_path = os.path.join(script_dir, "images", "Field.png")
+        self.pixmap = QPixmap(image_path)
+        
+        if self.pixmap.isNull():
+            self.image_label.setText(f"Image not found at: {image_path}")
+        else:
+            self.image_label.setPixmap(self.pixmap)
 
-topBarHeight = 40
-bottomBarHeight = 60
+        #Buttons
+        self.clear_button = QPushButton("Clear Auto")
+        self.clear_button.clicked.connect(self.clear_points)
 
-screen_width = 1200
-screen_height = (screen_width * (643/1286)) + topBarHeight + bottomBarHeight
+        #Layout of the auto planner
+        layout = QVBoxLayout()
+        layout.addWidget(self.clear_button)
+        layout.addWidget(self.image_label)
 
-screen = pg.display.set_mode((screen_width, screen_height))#, pg.RESIZABLE)
-pg.display.set_caption("Auto Planner")
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
 
-render = render.render(pg, screen, topBarHeight, bottomBarHeight)
+        self.resize(self.pixmap.width(), self.pixmap.height() + 60)
 
-tabIndex = 0
-tabs = [
-    pathEditor.pathEditor(render),
-    buttonEditor.buttonEditor(render, pathEditor),
-    export.export(pg, render, buttonEditor)
-]
+        self.setMouseTracking(True)
 
-tabs[tabIndex].load()
+        #Variables
+        self.coordinates = np.empty((0, 2), dtype=int)
+        self.robot_size = 35
 
-def addTab(i):
-    x1 = i * (screen_width/(len(tabs)))
-    x2 = (screen_width/(len(tabs)))
-    rect = (x1, 0, x2, topBarHeight)
-    
-    def getIsSelected():
-        global tabIndex
-        return tabIndex == i
-    
-    def getIsVisible():
-        return True
-    
-    def onClick(pos):
-        global tabIndex
-        tabs[tabIndex].unload()
-        tabIndex = i
-        tabs[tabIndex].load()
-        render.renderElements(pos)
-        pg.display.update()
-    
-    render.addButton(rect, tabs[i].name, getIsSelected, getIsVisible, onClick)
+    #Tell where the user clicked the screen
+    def mousePressEvent(self, event: QMouseEvent):
+        pos = self.image_label.mapFrom(self, event.position().toPoint())
+        x = pos.x()
+        y = pos.y()
+        
+        if 0 <= x < self.pixmap.width() and 0 <= y < self.pixmap.height():
+            self.coordinates = np.vstack((self.coordinates, [x, y]))
+
+            if event.button() == Qt.RightButton:
+                self.instantiate_robot()
+                print(f"{self.coordinates}")
+
+    #Create a robot(square) at the point clicked
+    def instantiate_robot(self):
+        painter = QPainter(self.pixmap)
+        pen = QPen(Qt.white)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        
+
+        if len(self.coordinates) > 1:
+            for i in range(len(self.coordinates) - 1):
+                x1, y1 = self.coordinates[i]
+                x2, y2 = self.coordinates[i + 1]
+                painter.drawLine(x1, y1, x2, y2)
+        
+        #Create robot
+        for x, y in self.coordinates:
+            top_left_x = int(x - self.robot_size // 2)
+            top_left_y = int(y - self.robot_size // 2)
             
-for i in range(len(tabs)):
-    addTab(i)
-    
-render.renderElements((screen_width/2, screen_height/2))
-
-running = True
-last_click = -1
-
-def offsetPos(pos):
-    return (pos[0],pos[1])
-
-while running:
-    for event in pg.event.get():
+            painter.drawRect(QRect(top_left_x, top_left_y, self.robot_size, self.robot_size))
         
-        if event.type == pg.MOUSEMOTION:
-            pos = pg.mouse.get_pos()
-            render.renderElements(pos)
-            if pos[1] > topBarHeight:
-                tabs[tabIndex].mouseMove(offsetPos(pos))
-            # refreshTabs(pos)
-        
-        elif event.type == pg.MOUSEBUTTONDOWN:
-            pos = pg.mouse.get_pos()
-            render.clickElement(pos)
-            if pos[1] > topBarHeight:
-                now = pg.time.get_ticks()
-                if now - last_click <= doubleClickDuration:
-                    tabs[tabIndex].doubleClick(offsetPos(pos))   
-                else:
-                    tabs[tabIndex].mouseDown(offsetPos(pos))
-                last_click = pg.time.get_ticks()
-            # else:
-                # clickTab(pos)
-        
-        elif event.type == pg.MOUSEBUTTONUP:
-            pos = pg.mouse.get_pos()
-            if pos[1] > topBarHeight:
-                tabs[tabIndex].mouseUp(offsetPos(pos))
+        self.image_label.setPixmap(self.pixmap)
 
-        elif event.type == pg.KEYDOWN:
-            tabs[tabIndex].keyDown(event.key)
-            if event.key == pg.K_TAB:
-                tabs[tabIndex].unload()
-                tabIndex = (tabIndex + 1) % len(tabs)
-                tabs[tabIndex].load()
-                render.renderElements(pg.mouse.get_pos())
+    #Clears all points
+    def clear_points(self):
+        self.coordinates = np.empty((0, 2), dtype=int)
+        self.pixmap = QPixmap(os.path.join(os.path.dirname(os.path.abspath(__file__)), "images", "Field.png"))
+        self.image_label.setPixmap(self.pixmap)
 
-        elif event.type == pg.QUIT:
-            running = False
-            
-pg.quit()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
