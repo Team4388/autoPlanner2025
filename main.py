@@ -13,7 +13,11 @@ class PathPlanner(QMainWindow):
 
         self.setWindowTitle("Auto Planner")
 
-        #Set background image to the field
+        self.coordinates = np.empty((0, 2), dtype=int)
+        self.control_points = []
+        self.rotation_handles = []
+        self.node_angles = []
+
         self.image_label = QLabel(self)
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -25,10 +29,6 @@ class PathPlanner(QMainWindow):
         else:
             self.image_label.setPixmap(self.pixmap)
 
-        #I want to put these in a side toolbar
-        #self.clear_button = QPushButton("Clear Auto")
-        #self.clear_button.clicked.connect(self.show_clear_warning)
-
         self.main_window_button = QPushButton("Main Window")
         self.main_window_button.clicked.connect(self.show_main_window)
         self.button_editor_button = QPushButton("Button Editor")
@@ -38,7 +38,6 @@ class PathPlanner(QMainWindow):
         button_layout.addWidget(self.main_window_button)
         button_layout.addWidget(self.button_editor_button)
 
-        #Layout of the auto planner
         layout = QVBoxLayout()
         layout.addLayout(button_layout)
         layout.addWidget(self.image_label)
@@ -53,7 +52,6 @@ class PathPlanner(QMainWindow):
 
         self.setMouseTracking(True)
 
-        #Variables
         self.last_click_pos = QPoint()
 
         self.coordinates = np.empty((0, 2), dtype=int)
@@ -83,7 +81,7 @@ class PathPlanner(QMainWindow):
                     self.calculate_control_points()
                 self.calculate_rotation_handle_pos()
                 self.draw_scene()
-                self.draw_scene()
+                self.button_editor.update_scene()
             elif event.button() == Qt.LeftButton:
                 current_time = event.timestamp()
                 if (current_time - self.last_click_time < 300 and 
@@ -96,22 +94,23 @@ class PathPlanner(QMainWindow):
                         if control_point_index != (-1, -1):
                             self.smoothPoints(control_point_index[0], control_point_index[1])
                             self.draw_scene()
+                            self.button_editor.update_scene()
                 else:
-                        control_point_index = self.is_point_in_control_point(x, y)
-                        if control_point_index != (-1, -1):
-                            self.dragging_control_point = True
-                            self.dragging_control_point_index = control_point_index
+                    control_point_index = self.is_point_in_control_point(x, y)
+                    if control_point_index != (-1, -1):
+                        self.dragging_control_point = True
+                        self.dragging_control_point_index = control_point_index
+                    else:
+                        node_index = self.is_point_in_node(x, y)
+                        if node_index != -1:
+                            self.dragging_node = True
+                            self.dragging_node_index = node_index
                         else:
-                            node_index = self.is_point_in_node(x, y)
-                            if node_index != -1:
-                                self.dragging_node = True
-                                self.dragging_node_index = node_index
-                            else:
-                                rotation_handle_index = self.is_point_in_rotation_handle(x, y)
-                                if rotation_handle_index != -1:
-                                    self.dragging_rotation_handle = True
-                                    self.dragging_rotation_handle_index = rotation_handle_index
-        
+                            rotation_handle_index = self.is_point_in_rotation_handle(x, y)
+                            if rotation_handle_index != -1:
+                                self.dragging_rotation_handle = True
+                                self.dragging_rotation_handle_index = rotation_handle_index
+
                 self.last_click_time = current_time
                 self.last_click_pos = pos
 
@@ -125,6 +124,7 @@ class PathPlanner(QMainWindow):
         if index < len(self.rotation_handles):
             del self.rotation_handles[index]
         self.draw_scene()
+        self.button_editor.update_scene()
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.dragging_control_point:
@@ -133,6 +133,7 @@ class PathPlanner(QMainWindow):
             curve_index, point_index = self.dragging_control_point_index
             self.control_points[curve_index][point_index] = QPoint(x, y)
             self.draw_scene()
+            self.button_editor.update_scene()
         elif self.dragging_node:
             pos = self.image_label.mapFrom(self, event.position().toPoint())
             x, y = pos.x(), pos.y()
@@ -140,6 +141,7 @@ class PathPlanner(QMainWindow):
             self.calculate_control_points()
             self.calculate_rotation_handle_pos()
             self.draw_scene()
+            self.button_editor.update_scene()
         elif self.dragging_rotation_handle:
             pos = self.image_label.mapFrom(self, event.position().toPoint())
             x, y = pos.x(), pos.y()
@@ -154,7 +156,7 @@ class PathPlanner(QMainWindow):
             rotation_handle_y = int(node_y + self.rotation_handle_distance * np.sin(angle))
             self.rotation_handles[self.dragging_rotation_handle_index] = QPoint(rotation_handle_x, rotation_handle_y)
             self.draw_scene()
-            self.draw_scene()
+            self.button_editor.update_scene()
 
     #Resets dragging when mouse is released
     def mouseReleaseEvent(self, event: QMouseEvent):
@@ -165,6 +167,7 @@ class PathPlanner(QMainWindow):
             self.dragging_node_index = -1
             self.dragging_rotation_handle = False
             self.dragging_rotation_handle_index = -1
+            self.button_editor.update_scene()
 
     #These 3 are for distinguishing what the user is clicking
     def is_point_in_rotation_handle(self, x, y):
@@ -214,6 +217,10 @@ class PathPlanner(QMainWindow):
                 self.rotation_handles.append(QPoint(rotation_handle_x, rotation_handle_y))
             else:
                 self.rotation_handles[i] = QPoint(rotation_handle_x, rotation_handle_y)  
+
+    #Updates buttonEditor
+    def update_scene(self):
+        self.button_editor.update_scene(self.coordinates, self.control_points)
 
     #Draws the scene, big important function
     def draw_scene(self):
@@ -289,6 +296,7 @@ class PathPlanner(QMainWindow):
             painter.setBrush(Qt.NoBrush)
 
         self.image_label.setPixmap(self.pixmap)
+        self.button_editor.update_scene()
 
     #S M O O T H
     def smoothPoints(self, curve_index: int, point_index: int):
@@ -318,6 +326,7 @@ class PathPlanner(QMainWindow):
         self.rotation_handles.clear()
         self.node_angles.clear()
         self.draw_scene()
+        self.button_editor.update_scene()
 
     #Warning for clearing
     def show_clear_warning(self):
