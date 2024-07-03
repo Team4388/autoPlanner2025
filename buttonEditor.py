@@ -85,8 +85,8 @@ class ButtonEditor(QMainWindow):
         painter.setBrush(Qt.white)
 
         for i, (x, y) in enumerate(self.path_planner.coordinates):
-            node_rect = QRect(x - self.path_planner.node_size // 2, y - self.path_planner.node_size // 2,
-                            self.path_planner.node_size, self.path_planner.node_size)
+            node_rect = QRect(x - self.path_planner.node_size // 6, y - self.path_planner.node_size // 6,
+                            self.path_planner.node_size // 3, self.path_planner.node_size // 3)
             painter.drawEllipse(node_rect)
             painter.drawText(node_rect, Qt.AlignCenter, str(i + 1))
 
