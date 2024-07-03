@@ -78,6 +78,11 @@ class MainWindow(QMainWindow):
                     node_index = self.is_point_in_node(x, y)
                     if node_index != -1:
                         self.delete_node(node_index)
+                    else:
+                        handle_index = self.is_point_in_handle(x, y)
+                        if handle_index != -1:
+                            self.smoothPoints(handle_index)
+                            self.draw_scene()
                 else:
                     handle_index = self.is_point_in_handle(x, y)
                     if handle_index != -1:
@@ -268,6 +273,28 @@ class MainWindow(QMainWindow):
             painter.setBrush(Qt.NoBrush)
 
         self.image_label.setPixmap(self.pixmap)
+
+    #S M O O T H
+    def smoothPoints(self, index: int):
+        curveEditPoints = self.handles
+        nodes = [QPoint(x, y) for x, y in self.coordinates]
+
+        for i in range(index+1, len(curveEditPoints)):
+            controlPointPos = curveEditPoints[i-1]
+            nodePos = nodes[i]
+            curveEditPoints[i] = QPoint(
+                2*nodePos.x() - controlPointPos.x(),
+                2*nodePos.y() - controlPointPos.y()
+            )
+        for i in range(0, index):
+            controlPointPos = curveEditPoints[index-i]
+            nodePos = nodes[index-i]
+            curveEditPoints[index-i-1] = QPoint(
+                2*nodePos.x() - controlPointPos.x(),
+                2*nodePos.y() - controlPointPos.y()
+            )
+
+        self.handles = curveEditPoints
 
     #Clears all
     def clear_points(self):
