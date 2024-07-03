@@ -33,3 +33,6 @@ python3 ./main.py
 - Click export, and save to a file
 
 ### Known Bugs:
+
+- Smoothing function is janky (I want to completely redo it)
+- Sometimes the control points spawn in random locations but I cant seem to replicate it?

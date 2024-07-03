@@ -1,11 +1,13 @@
 import sys
 import os
 import numpy as np
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QMessageBox
 from PySide6.QtGui import QPixmap, QMouseEvent, QPainter, QPen, QColor, QPainterPath, QPolygon, QFont
 from PySide6.QtCore import Qt, QPoint, QRect
 
-class MainWindow(QMainWindow):
+from buttonEditor import ButtonEditor
+
+class PathPlanner(QMainWindow):
     def __init__(self):
         super().__init__()
 
@@ -23,14 +25,25 @@ class MainWindow(QMainWindow):
         else:
             self.image_label.setPixmap(self.pixmap)
 
-        #Buttons
-        self.clear_button = QPushButton("Clear Auto")
-        self.clear_button.clicked.connect(self.show_clear_warning)
+        #I want to put these in a side toolbar
+        #self.clear_button = QPushButton("Clear Auto")
+        #self.clear_button.clicked.connect(self.show_clear_warning)
+
+        self.main_window_button = QPushButton("Main Window")
+        self.main_window_button.clicked.connect(self.show_main_window)
+        self.button_editor_button = QPushButton("Button Editor")
+        self.button_editor_button.clicked.connect(self.show_button_editor)
+
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.main_window_button)
+        button_layout.addWidget(self.button_editor_button)
 
         #Layout of the auto planner
         layout = QVBoxLayout()
-        layout.addWidget(self.clear_button)
+        layout.addLayout(button_layout)
         layout.addWidget(self.image_label)
+
+        self.button_editor = ButtonEditor(self)
 
         container = QWidget()
         container.setLayout(layout)
@@ -314,8 +327,16 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             self.clear_points() 
 
+    def show_main_window(self):
+        self.show()
+        self.button_editor.hide()
+
+    def show_button_editor(self):
+        self.hide()
+        self.button_editor.show()            
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = PathPlanner()
     window.show()
     sys.exit(app.exec())
