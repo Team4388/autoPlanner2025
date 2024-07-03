@@ -15,8 +15,8 @@ python3 ./main.py
 
 ##### "Path Editor" Tab:
 
-- Click to add nodes
-- Click on specific points to manipulate paths and nodes
+- Right click to add nodes
+- Left click on specific points to manipulate paths and nodes
 - Double click on nodes to delete them
 - Double click on control points to make path, and robot movment continuous, while keeping the node clicked the at the same location
 
