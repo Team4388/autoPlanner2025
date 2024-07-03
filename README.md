@@ -18,7 +18,7 @@ python3 ./main.py
 - Right click to add nodes
 - Left click on specific points to manipulate paths and nodes
 - Double click on nodes to delete them
-- Double click on control points to make path, and robot movment continuous, while keeping the node clicked the at the same location
+- Double click on control points to make path, and robot movment continuous, while keeping the node clicked the at the same location (Smooth the path)
 
 ##### "Button editor" Tab:
 
@@ -33,4 +33,3 @@ python3 ./main.py
 - Click export, and save to a file
 
 ### Known Bugs:
-

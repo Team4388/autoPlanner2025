@@ -1,7 +1,7 @@
 import sys
 import os
 import numpy as np
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget, QMessageBox
 from PySide6.QtGui import QPixmap, QMouseEvent, QPainter, QPen, QColor, QPainterPath, QPolygon, QFont
 from PySide6.QtCore import Qt, QPoint, QRect
 
@@ -11,7 +11,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Auto Planner")
 
-        # Set background image to the field
+        #Set background image to the field
         self.image_label = QLabel(self)
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,11 +23,11 @@ class MainWindow(QMainWindow):
         else:
             self.image_label.setPixmap(self.pixmap)
 
-        # Buttons
+        #Buttons
         self.clear_button = QPushButton("Clear Auto")
-        self.clear_button.clicked.connect(self.clear_points)
+        self.clear_button.clicked.connect(self.show_clear_warning)
 
-        # Layout of the auto planner
+        #Layout of the auto planner
         layout = QVBoxLayout()
         layout.addWidget(self.clear_button)
         layout.addWidget(self.image_label)
@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
 
         self.setMouseTracking(True)
 
-        # Variables
+        #Variables
         self.last_click_pos = QPoint()
 
         self.coordinates = np.empty((0, 2), dtype=int)
@@ -48,13 +48,13 @@ class MainWindow(QMainWindow):
         self.node_size = 35
         self.handle_size = 15
         self.rotation_handle_distance = 35
-        self.handles = []
+        self.control_points = []
         self.rotation_handles = []
         self.node_angles = []
-        self.dragging_handle = False
+        self.dragging_control_point = False
         self.dragging_node = False
         self.dragging_rotation_handle = False
-        self.dragging_handle_index = -1
+        self.dragging_control_point_index = (-1, -1)
         self.dragging_node_index = -1
         self.dragging_rotation_handle_index = -1
 
@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
             if event.button() == Qt.RightButton:
                 self.coordinates = np.vstack((self.coordinates, [x, y]))
                 if len(self.coordinates) >= 2:
-                    self.calculate_handle_pos()
+                    self.calculate_control_points()
                 self.calculate_rotation_handle_pos()
                 self.draw_scene()
                 self.draw_scene()
@@ -79,50 +79,52 @@ class MainWindow(QMainWindow):
                     if node_index != -1:
                         self.delete_node(node_index)
                     else:
-                        handle_index = self.is_point_in_handle(x, y)
-                        if handle_index != -1:
-                            self.smoothPoints(handle_index)
+                        control_point_index = self.is_point_in_control_point(x, y)
+                        if control_point_index != (-1, -1):
+                            self.smoothPoints(control_point_index[0], control_point_index[1])
                             self.draw_scene()
                 else:
-                    handle_index = self.is_point_in_handle(x, y)
-                    if handle_index != -1:
-                        self.dragging_handle = True
-                        self.dragging_handle_index = handle_index
-                    else:
-                        node_index = self.is_point_in_node(x, y)
-                        if node_index != -1:
-                            self.dragging_node = True
-                            self.dragging_node_index = node_index
+                        control_point_index = self.is_point_in_control_point(x, y)
+                        if control_point_index != (-1, -1):
+                            self.dragging_control_point = True
+                            self.dragging_control_point_index = control_point_index
                         else:
-                            rotation_handle_index = self.is_point_in_rotation_handle(x, y)
-                            if rotation_handle_index != -1:
-                                self.dragging_rotation_handle = True
-                                self.dragging_rotation_handle_index = rotation_handle_index
-                
+                            node_index = self.is_point_in_node(x, y)
+                            if node_index != -1:
+                                self.dragging_node = True
+                                self.dragging_node_index = node_index
+                            else:
+                                rotation_handle_index = self.is_point_in_rotation_handle(x, y)
+                                if rotation_handle_index != -1:
+                                    self.dragging_rotation_handle = True
+                                    self.dragging_rotation_handle_index = rotation_handle_index
+        
                 self.last_click_time = current_time
                 self.last_click_pos = pos
 
     #Deletes node
     def delete_node(self, index):
         self.coordinates = np.delete(self.coordinates, index, axis=0)
-        if index < len(self.handles):
-            del self.handles[index]
+        if index < len(self.control_points):
+            del self.control_points[index]
+        if index > 0 and index < len(self.control_points):
+            del self.control_points[index - 1]
         if index < len(self.rotation_handles):
             del self.rotation_handles[index]
         self.draw_scene()
 
-    #
     def mouseMoveEvent(self, event: QMouseEvent):
-        if self.dragging_handle:
+        if self.dragging_control_point:
             pos = self.image_label.mapFrom(self, event.position().toPoint())
             x, y = pos.x(), pos.y()
-            self.handles[self.dragging_handle_index] = QPoint(x, y)
+            curve_index, point_index = self.dragging_control_point_index
+            self.control_points[curve_index][point_index] = QPoint(x, y)
             self.draw_scene()
         elif self.dragging_node:
             pos = self.image_label.mapFrom(self, event.position().toPoint())
             x, y = pos.x(), pos.y()
             self.coordinates[self.dragging_node_index] = [x, y]
-            self.calculate_handle_pos()
+            self.calculate_control_points()
             self.calculate_rotation_handle_pos()
             self.draw_scene()
         elif self.dragging_rotation_handle:
@@ -144,8 +146,8 @@ class MainWindow(QMainWindow):
     #Resets dragging when mouse is released
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:
-            self.dragging_handle = False
-            self.dragging_handle_index = -1
+            self.dragging_control_point = False
+            self.dragging_control_point_index = (-1, -1)
             self.dragging_node = False
             self.dragging_node_index = -1
             self.dragging_rotation_handle = False
@@ -159,12 +161,13 @@ class MainWindow(QMainWindow):
                 return i
         return -1
 
-    def is_point_in_handle(self, x, y):
-        for i, handle in enumerate(self.handles):
-            if (abs(x - handle.x()) <= self.handle_size // 2 and
-                abs(y - handle.y()) <= self.handle_size // 2):
-                return i
-        return -1
+    def is_point_in_control_point(self, x, y):
+        for i, control_pair in enumerate(self.control_points):
+            for j, control_point in enumerate(control_pair):
+                if (abs(x - control_point.x()) <= self.handle_size // 2 and
+                    abs(y - control_point.y()) <= self.handle_size // 2):
+                    return (i, j)
+        return (-1, -1)
 
     def is_point_in_node(self, x, y):
         for i, (node_x, node_y) in enumerate(self.coordinates):
@@ -174,11 +177,15 @@ class MainWindow(QMainWindow):
         return -1
     
     #Calculating the handle positions
-    def calculate_handle_pos(self):
+    def calculate_control_points(self):
         if len(self.coordinates) >= 2:
             x1, y1 = self.coordinates[-2]
             x2, y2 = self.coordinates[-1]
-            self.handles.append(QPoint((x1 + x2) // 2, (y1 + y2) // 2))
+            mid_x, mid_y = (x1 + x2) // 2, (y1 + y2) // 2
+            self.control_points.append([
+                QPoint(mid_x - (x2 - x1) // 4, mid_y - (y2 - y1) // 4),
+                QPoint(mid_x + (x2 - x1) // 4, mid_y + (y2 - y1) // 4)
+            ])
 
     def calculate_rotation_handle_pos(self):
         for i, (x, y) in enumerate(self.coordinates):
@@ -203,40 +210,36 @@ class MainWindow(QMainWindow):
         grey_pen = QPen(QColor(127, 127, 127))
         grey_pen.setWidth(2)
         painter.setPen(grey_pen)
-        for i, handle in enumerate(self.handles):
-            if i < len(self.coordinates) and i + 1 < len(self.coordinates):
-                node1_pos = QPoint(self.coordinates[i][0], self.coordinates[i][1])
-                node2_pos = QPoint(self.coordinates[i+1][0], self.coordinates[i+1][1])
-                painter.drawLine(handle, node1_pos)
-                painter.drawLine(handle, node2_pos)
-                                 
-        if len(self.coordinates) >= 2:
-            for i in range(len(self.coordinates) - 1):
+        for i, control_pair in enumerate(self.control_points):
+            if i < len(self.coordinates) - 1:
                 start = QPoint(self.coordinates[i][0], self.coordinates[i][1])
                 end = QPoint(self.coordinates[i + 1][0], self.coordinates[i + 1][1])
                 
-                if i < len(self.handles):
-                    pen = QPen(Qt.yellow)
-                    pen.setWidth(2)
-                    painter.setPen(pen)
+                pen = QPen(Qt.yellow)
+                pen.setWidth(2)
+                painter.setPen(pen)
 
-                    path = QPainterPath()
-                    path.moveTo(start)
-                    handle = self.handles[i]
-                    path.cubicTo(handle, handle, end)
-                    painter.drawPath(path)
+                path = QPainterPath()
+                path.moveTo(start)
+                path.cubicTo(control_pair[0], control_pair[1], end)
+                painter.drawPath(path)
 
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(0, 255, 255)) 
+                painter.setBrush(Qt.NoBrush)
+                for control_point in control_pair:
+                    painter.setPen(QPen(QColor(127, 127, 127), 1, Qt.DashLine))
+                    painter.drawLine(start, control_point)
+                    painter.drawLine(end, control_point)
+
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(0, 255, 255))
+                for control_point in control_pair:
                     painter.drawEllipse(
-                        handle.x() - self.handle_size // 2,
-                        handle.y() - self.handle_size // 2,
+                        control_point.x() - self.handle_size // 2,
+                        control_point.y() - self.handle_size // 2,
                         self.handle_size,
                         self.handle_size
                     )
-                    painter.setBrush(Qt.NoBrush)
-                else:
-                    painter.drawLine(start, end)
+                painter.setBrush(Qt.NoBrush)
 
         for i, (x, y) in enumerate(self.coordinates):
             if i < len(self.rotation_handles):
@@ -259,7 +262,7 @@ class MainWindow(QMainWindow):
                 font = painter.font()
                 font.setPointSize(25)
                 painter.setFont(font)
-                painter.drawText(QRect(x - self.node_size//2, y - self.node_size//2, 
+                painter.drawText(QRect(x - self.node_size // 2, y - self.node_size // 2, 
                                     self.node_size, self.node_size), 
                                 Qt.AlignCenter, str(i + 1))
         
@@ -275,34 +278,41 @@ class MainWindow(QMainWindow):
         self.image_label.setPixmap(self.pixmap)
 
     #S M O O T H
-    def smoothPoints(self, index: int):
-        curveEditPoints = self.handles
-        nodes = [QPoint(x, y) for x, y in self.coordinates]
+    def smoothPoints(self, curve_index: int, point_index: int):
+        if curve_index + 1 < len(self.control_points):
+            prev_control_pair = self.control_points[curve_index]
+            next_control_pair = self.control_points[curve_index + 1]
+            node = QPoint(self.coordinates[curve_index + 1][0], self.coordinates[curve_index + 1][1])
 
-        for i in range(index+1, len(curveEditPoints)):
-            controlPointPos = curveEditPoints[i-1]
-            nodePos = nodes[i]
-            curveEditPoints[i] = QPoint(
-                2*nodePos.x() - controlPointPos.x(),
-                2*nodePos.y() - controlPointPos.y()
+            #Calculate the new position for the second control point
+            new_control2 = QPoint(
+                2 * node.x() - next_control_pair[0].x(),
+                2 * node.y() - next_control_pair[0].y()
             )
-        for i in range(0, index):
-            controlPointPos = curveEditPoints[index-i]
-            nodePos = nodes[index-i]
-            curveEditPoints[index-i-1] = QPoint(
-                2*nodePos.x() - controlPointPos.x(),
-                2*nodePos.y() - controlPointPos.y()
-            )
+            self.control_points[curve_index][1] = new_control2
 
-        self.handles = curveEditPoints
+            #Calculate the new position for the first control point
+            new_control1 = QPoint(
+                2 * node.x() - prev_control_pair[1].x(),
+                2 * node.y() - prev_control_pair[1].y()
+            )
+            self.control_points[curve_index + 1][0] = new_control1
 
     #Clears all
     def clear_points(self):
         self.coordinates = np.empty((0, 2), dtype=int)
-        self.handles = []
-        self.rotation_handles = []
-        self.pixmap = QPixmap(os.path.join(os.path.dirname(os.path.abspath(__file__)), "images", "Field.png"))
-        self.image_label.setPixmap(self.pixmap)
+        self.control_points.clear()
+        self.rotation_handles.clear()
+        self.node_angles.clear()
+        self.draw_scene()
+
+    #Warning for clearing
+    def show_clear_warning(self):
+        reply = QMessageBox.question(self, "Clear Auto", 
+                                        "Are you sure you want to clear this auto?", 
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.clear_points() 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
