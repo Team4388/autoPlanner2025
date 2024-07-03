@@ -34,5 +34,3 @@ python3 ./main.py
 
 ### Known Bugs:
 
-- Because the variables don't get transferred over yet, you must click on the button editor tab before exporting.
-- The driver controller's movement stick is rotated by 90 degrees (Maybe)
