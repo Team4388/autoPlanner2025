@@ -1,12 +1,12 @@
 # autoPlanner
 
-(WIP) An auto creation tool for Ridgebotics 2024
+(WIP) An auto creation tool for Ridgebotics 2025
 
 ### Install
 
 ```shell
-git clone https://github.com/astatin3/autoPlanner
-cd autoPlanner
+git clone https://https://github.com/Team4388/autoPlanner2025/tree/pyside
+cd autoPlanner2025
 pip install -r requirements.txt
 python3 ./main.py
 ```
