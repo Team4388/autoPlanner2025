@@ -2,7 +2,7 @@ import sys
 import os
 import numpy as np
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QMessageBox
-from PySide6.QtGui import QPixmap, QMouseEvent, QPainter, QPen, QColor, QPainterPath, QPolygon, QFont
+from PySide6.QtGui import QPixmap, QMouseEvent, QPainter, QPen, QColor, QPainterPath, QPolygon, QFont, QKeyEvent
 from PySide6.QtCore import Qt, QPoint, QRect
 
 from buttonEditor import ButtonEditor
@@ -69,6 +69,10 @@ class PathPlanner(QMainWindow):
         self.draggingNodeIndex = -1
         self.draggingRotationHandleIndex = -1
 
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key_R:
+            self.showClearWarning()
+
     def mousePressEvent(self, event: QMouseEvent):
         pos = self.imageLabel.mapFrom(self, event.position().toPoint())
         x, y = pos.x(), pos.y()
@@ -76,6 +80,7 @@ class PathPlanner(QMainWindow):
         if 0 <= x < self.pixmap.width() and 0 <= y < self.pixmap.height():
             if event.button() == Qt.RightButton:
                 self.coordinates = np.vstack((self.coordinates, [x, y]))
+                self.nodeAngles.append(0)
                 if len(self.coordinates) >= 2:
                     self.calculateControlPoints()
                 self.calculateRotationHandlePos()
@@ -116,43 +121,36 @@ class PathPlanner(QMainWindow):
     def deleteNode(self, index):
         self.coordinates = np.delete(self.coordinates, index, axis=0)
         if index < len(self.controlPoints):
-            del self.controlPoints[index]
+            self.controlPoints.pop(index)
         if index > 0 and index < len(self.controlPoints):
-            del self.controlPoints[index - 1]
-        if index < len(self.rotationHandles):
-            del self.rotationHandles[index]
+            self.controlPoints.pop(index - 1)
+        self.nodeAngles.pop(index)
+        self.calculateControlPoints()
+        self.calculateRotationHandlePos()
         self.drawScene()
         self.buttonEditor.updateScene()
 
+
     def mouseMoveEvent(self, event: QMouseEvent):
+        pos = self.imageLabel.mapFrom(self, event.position().toPoint())
+        x, y = pos.x(), pos.y()
+        
         if self.draggingControlPoint:
-            pos = self.imageLabel.mapFrom(self, event.position().toPoint())
-            x, y = pos.x(), pos.y()
-            curveIndex, pointIndex = self.draggingControlPointIndex
-            self.controlPoints[curveIndex][pointIndex] = QPoint(x, y)
+            self.controlPoints[self.draggingControlPointIndex[0]][self.draggingControlPointIndex[1]] = QPoint(x, y)
             self.drawScene()
             self.buttonEditor.updateScene()
         elif self.draggingNode:
-            pos = self.imageLabel.mapFrom(self, event.position().toPoint())
-            x, y = pos.x(), pos.y()
             self.coordinates[self.draggingNodeIndex] = [x, y]
             self.calculateControlPoints()
             self.calculateRotationHandlePos()
             self.drawScene()
             self.buttonEditor.updateScene()
         elif self.draggingRotationHandle:
-            pos = self.imageLabel.mapFrom(self, event.position().toPoint())
-            x, y = pos.x(), pos.y()
-            nodeX, nodeY = self.coordinates[self.draggingRotationHandleIndex]
-            dx = x - nodeX
-            dy = y - nodeY
-            angle = np.arctan2(dy, dx)
-
+            nodePos = QPoint(self.coordinates[self.draggingRotationHandleIndex][0], 
+                            self.coordinates[self.draggingRotationHandleIndex][1])
+            angle = (np.degrees(np.arctan2(y - nodePos.y(), x - nodePos.x())) + 90) % 360
             self.nodeAngles[self.draggingRotationHandleIndex] = angle
-
-            rotationHandleX = int(nodeX + self.rotationHandleDistance * np.cos(angle))
-            rotationHandleY = int(nodeY + self.rotationHandleDistance * np.sin(angle))
-            self.rotationHandles[self.draggingRotationHandleIndex] = QPoint(rotationHandleX, rotationHandleY)
+            self.calculateRotationHandlePos()
             self.drawScene()
             self.buttonEditor.updateScene()
 
@@ -199,19 +197,13 @@ class PathPlanner(QMainWindow):
             ])
 
     def calculateRotationHandlePos(self):
+        self.rotationHandles = []
         for i, (x, y) in enumerate(self.coordinates):
-            if i >= len(self.nodeAngles):
-                self.nodeAngles.append(np.pi)  # Default angle for new nodes
-            
-            angle = self.nodeAngles[i]
-            
-            rotationHandleX = int(x + self.rotationHandleDistance * np.cos(angle))
-            rotationHandleY = int(y + self.rotationHandleDistance * np.sin(angle))
-            
-            if i >= len(self.rotationHandles):
-                self.rotationHandles.append(QPoint(rotationHandleX, rotationHandleY))
-            else:
-                self.rotationHandles[i] = QPoint(rotationHandleX, rotationHandleY)  
+            angle = self.nodeAngles[i] if i < len(self.nodeAngles) else 0
+            radians = np.radians(angle)
+            handle_x = x + self.rotationHandleDistance * np.sin(radians)
+            handle_y = y - self.rotationHandleDistance * np.cos(radians)
+            self.rotationHandles.append(QPoint(int(handle_x), int(handle_y)))
 
     def updateScene(self):
         self.buttonEditor.updateScene(self.coordinates, self.controlPoints)
@@ -256,11 +248,11 @@ class PathPlanner(QMainWindow):
 
         for i, (x, y) in enumerate(self.coordinates):
             if i < len(self.rotationHandles):
-                angle = self.nodeAngles[i]
+                angle = self.nodeAngles[i] if i < len(self.nodeAngles) else 0 
                 
                 painter.save()
                 painter.translate(x, y)
-                painter.rotate(np.degrees(angle))
+                painter.rotate(angle)
                 
                 pen = QPen(QColor(127, 127, 127))  
                 pen.setWidth(2)  
