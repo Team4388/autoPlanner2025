@@ -1,8 +1,8 @@
 import sys
 import os
 import numpy as np
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QScrollArea
-from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
 from PySide6.QtCore import Qt, QPoint, QRect
 
 class ButtonEditor(QMainWindow):
@@ -34,38 +34,62 @@ class ButtonEditor(QMainWindow):
         layout.addLayout(buttonLayout)
         layout.addWidget(self.imageLabel)
 
-        self.scrollArea = QScrollArea()
-        self.scrollArea.setWidgetResizable(True)
-        self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        layout.addWidget(self.scrollArea)
+        self.timeLabel = QLabel("(0:00 / 0:15 sec)", self)
+        layout.addWidget(self.timeLabel, alignment=Qt.AlignCenter)
 
         self.rectanglesWidget = QWidget()
-        self.scrollArea.setWidget(self.rectanglesWidget)
+        self.rectanglesLayout = QHBoxLayout()
+        self.rectanglesLayout.setSpacing(0)
+        self.rectanglesLayout.setContentsMargins(40, 0, 0, 0)  
+        self.rectanglesWidget.setLayout(self.rectanglesLayout)
+        layout.addWidget(self.rectanglesWidget)
 
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self.resize(self.pixmap.width(), self.pixmap.height() + 200)
+        self.resize(self.pixmap.width(), self.pixmap.height() + 250) 
 
-        # VariablesssszczadasdadawsadsaaDSdasas
+        # Variables
         self.matchLength = 15
         self.TPS = 50
         self.matchTicks = self.matchLength * self.TPS
-        self.displayTickResolution = 18
+        self.displayTickResolution = 6.25
         self.displayTicks = round(self.matchTicks / self.displayTickResolution)
 
-        self.keyFrames = []
-        self.displayFrames = []
-
-        self.setupFrames()
-
-    def setupFrames(self):
-        self.keyFrames = list(range(1, self.matchTicks + 1))
+        self.currentFrame = 1
+        self.keyFrameData = [{"isNode": False, "isButton": False} for _ in range(self.displayTicks)]
+        self.updateKeyFrameData()
         self.displayFrames = list(range(1, self.displayTicks + 1))
 
-        print(len(self.keyFrames))
+        self.currentTime = [i * self.matchLength / (self.displayTicks - 1) for i in range(self.displayTicks)]
+        
+        num_nodes = 2
+        node_indices = np.linspace(0, self.displayTicks - 1, num_nodes, dtype=int)
+        for idx in node_indices:
+            self.keyFrameData[idx]["isNode"] = True
+
+        self.setupFrames()
+        self.updateRectangles()
+        self.updateTimeLabel()
+
+    def updateKeyFrameData(self):
+        num_nodes = len(self.pathPlanner.coordinates) if self.pathPlanner else 0
+        self.keyFrameData = [{"isNode": False, "isButton": False} for _ in range(self.displayTicks)]
+        
+        if num_nodes > 0:
+            node_indices = np.linspace(0, self.displayTicks - 1, num_nodes, dtype=int)
+            for idx in node_indices:
+                self.keyFrameData[idx]["isNode"] = True
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.updateRectangles()
+        self.updateTimeLabel()
+
+    def setupFrames(self):
+        self.displayFrames = list(range(1, self.displayTicks + 1))
+        print(len(self.keyFrameData))
         print(len(self.displayFrames))
 
     def showButtonEditor(self):
@@ -79,6 +103,7 @@ class ButtonEditor(QMainWindow):
             self.pathPlanner.show()
 
     def updateScene(self):
+        self.updateKeyFrameData()
         self.pixmap = QPixmap(os.path.join(os.path.dirname(os.path.abspath(__file__)), "images", "Field.png"))
         painter = QPainter(self.pixmap)
 
@@ -92,27 +117,39 @@ class ButtonEditor(QMainWindow):
                 painter.drawEllipse(nodeRect)
                 painter.drawText(nodeRect, Qt.AlignCenter, str(i + 1))
 
-                angle = self.pathPlanner.nodeAngles[i] if i < len(self.pathPlanner.nodeAngles) else 0
-                self.drawRobot(painter, QPoint(x, y), angle)
-
             if len(self.pathPlanner.coordinates) > 1:
-                for i in range(len(self.pathPlanner.coordinates) - 1):
-                    start = QPoint(self.pathPlanner.coordinates[i][0], self.pathPlanner.coordinates[i][1])
-                    end = QPoint(self.pathPlanner.coordinates[i + 1][0], self.pathPlanner.coordinates[i + 1][1])
+                total_points = 60
+                points_per_curve = total_points // len(self.pathPlanner.controlPoints)
+                remaining_points = total_points % len(self.pathPlanner.controlPoints)
 
-                    if i < len(self.pathPlanner.controlPoints):
-                        controlPair = self.pathPlanner.controlPoints[i]
+                for i, controlPair in enumerate(self.pathPlanner.controlPoints):
+                    if i < len(self.pathPlanner.coordinates) - 1:
+                        start = QPoint(self.pathPlanner.coordinates[i][0], self.pathPlanner.coordinates[i][1])
+                        end = QPoint(self.pathPlanner.coordinates[i + 1][0], self.pathPlanner.coordinates[i + 1][1])
+                        
+                        pen = QPen(Qt.yellow if self.keyFrameData[i]["isNode"] else Qt.white)  # Set color based on isNode
+                        pen.setWidth(2)
+                        painter.setPen(pen)
 
-                        start_angle = self.pathPlanner.nodeAngles[i] if i < len(self.pathPlanner.nodeAngles) else 0
-                        end_angle = self.pathPlanner.nodeAngles[i + 1] if i + 1 < len(self.pathPlanner.nodeAngles) else 0
+                        num_points = points_per_curve
+                        if i < remaining_points:
+                            num_points += 1
 
-                        for t in np.linspace(0, 1, self.displayTicks)[1:-1]:
+                        for t in np.linspace(0, 1, num_points):
                             point = self.pointOnBezierCurve(start, controlPair[0], controlPair[1], end, t)
-                            current_angle = self.interpolateAngle(start_angle, end_angle, t)
-                            self.drawRobot(painter, point, current_angle)
+                            painter.drawEllipse(point, 2, 2)
+
+                        if i == self.currentFrame - 1:
+                            t = (self.currentFrame - 1) / (num_points - 1)
+                            point = self.pointOnBezierCurve(start, controlPair[0], controlPair[1], end, t)
+                            start_angle = self.pathPlanner.nodeAngles[i] if i < len(self.pathPlanner.nodeAngles) else 0
+                            end_angle = self.pathPlanner.nodeAngles[i + 1] if i + 1 < len(self.pathPlanner.nodeAngles) else 0
+                            angle = self.interpolateAngle(start_angle, end_angle, t)
+                            self.drawRobot(painter, point, angle)
 
         painter.end()
         self.imageLabel.setPixmap(self.pixmap)
+        self.updateRectangles()
 
     def interpolateAngle(self, start_angle, end_angle, t):
         diff = (end_angle - start_angle + 180) % 360 - 180
@@ -142,33 +179,51 @@ class ButtonEditor(QMainWindow):
         return QPoint(int(x), int(y))
 
     def updateRectangles(self):
-        if self.rectanglesWidget.layout():
-            QWidget().setLayout(self.rectanglesWidget.layout())
+        for i in reversed(range(self.rectanglesLayout.count())):
+            widgetToRemove = self.rectanglesLayout.itemAt(i).widget()
+            self.rectanglesLayout.removeWidget(widgetToRemove)
+            widgetToRemove.setParent(None)
         
-        layout = QHBoxLayout()
-        layout.setSpacing(2)
+        window_width = self.rectanglesWidget.width()
+        if self.keyFrameData:
+            rect_width = window_width / len(self.keyFrameData) 
         
-        rect_width = 20
-        rect_height = 50
-        
-        for frame in self.displayFrames:
+        rect_height = 100
+        for index, frame in enumerate(self.keyFrameData):
             rectWidget = QWidget()
             rectWidget.setFixedSize(rect_width, rect_height)
-            rectWidget.setAutoFillBackground(True)
-            rectWidget.setStyleSheet("background-color: white; border: 1px solid black;")
+            
+            if frame["isNode"]:
+                rectWidget.setStyleSheet("background-color: yellow;")
+            else:
+                if index % 2 == 0:
+                    rectWidget.setStyleSheet("background-color: #ADD8E6;")
+                else:
+                    rectWidget.setStyleSheet("background-color: #00008B;")
+            
+            rectWidget.mousePressEvent = lambda event, idx=index: self.rectangleClicked(idx)
+            self.rectanglesLayout.addWidget(rectWidget)
 
-            layout.addWidget(rectWidget)
+    def rectangleClicked(self, index):
+        self.currentFrame = index + 1
+        self.updateRectangles()
+        self.updateScene()
+        self.updateTimeLabel()
 
-        self.rectanglesWidget.setLayout(layout)
-        self.rectanglesWidget.setFixedHeight(rect_height + 10)
-        self.rectanglesWidget.setMinimumWidth(len(self.displayFrames) * (rect_width + 2))
+        clicked_widget = self.rectanglesLayout.itemAt(index).widget()
+        clicked_widget.setStyleSheet("background-color: red;")
 
-        self.scrollArea.setWidget(self.rectanglesWidget)
-        self.scrollArea.setFixedHeight(rect_height + 30)
+    def updateTimeLabel(self):
+        current_time = self.currentTime[self.currentFrame - 1]
+        minutes = int(current_time // 60)
+        seconds = int(current_time % 60)
+        milliseconds = int((current_time % 1) * 1000)
+        self.timeLabel.setText(f"{minutes}:{seconds:02d}.{milliseconds:03d} / {self.matchLength:.3f} sec")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = ButtonEditor(None)
     window.updateScene()
+    window.updateRectangles()
     window.show()
     sys.exit(app.exec())

@@ -11,7 +11,7 @@ class PathPlanner(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Auto Planner")
+        self.setWindowTitle("Path Planner")
 
         self.coordinates = np.empty((0, 2), dtype=int)
         self.controlPoints = []
@@ -129,7 +129,6 @@ class PathPlanner(QMainWindow):
         self.calculateRotationHandlePos()
         self.drawScene()
         self.buttonEditor.updateScene()
-
 
     def mouseMoveEvent(self, event: QMouseEvent):
         pos = self.imageLabel.mapFrom(self, event.position().toPoint())
