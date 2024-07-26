@@ -5,79 +5,105 @@ from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QV
 from PySide6.QtGui import QPixmap, QMouseEvent, QPainter, QPen, QColor, QPainterPath, QPolygon, QFont, QKeyEvent
 from PySide6.QtCore import Qt, QPoint, QRect
 
-from buttonEditor import ButtonEditor
+from buttonEditor import ButtonEditor # Import the button editor
+from about import AboutWindow
+
+'''
+This is the path planner window
+The path planner lets the user add nodes and control points to let them change the bezier curves and the path of the robot during the auto
+'''
 
 class PathPlanner(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("Path Planner") # Set the window title
 
-        self.setWindowTitle("Path Planner")
-
-        self.coordinates = np.empty((0, 2), dtype=int)
+        # Set up the arrays
+        self.coordinates = np.empty((0, 2), dtype=int) # Make an empty array for the coordinates of objects
         self.controlPoints = []
         self.rotationHandles = []
         self.nodeAngles = []
 
+        # Find the field png and then set the background to that png
         self.imageLabel = QLabel(self)
-
         scriptDir = os.path.dirname(os.path.abspath(__file__))
         imagePath = os.path.join(scriptDir, "images", "Field.png")
         self.pixmap = QPixmap(imagePath)
-        
+
         if self.pixmap.isNull():
             self.imageLabel.setText(f"Image not found at: {imagePath}")
         else:
             self.imageLabel.setPixmap(self.pixmap)
 
+        # Buttons at the top of the screen
         self.mainWindowButton = QPushButton("Main Window")
         self.mainWindowButton.clicked.connect(self.showMainWindow)
         self.buttonEditorButton = QPushButton("Button Editor")
         self.buttonEditorButton.clicked.connect(self.showButtonEditor)
+        self.aboutButton = QPushButton("About")
+        self.aboutButton.clicked.connect(self.showAbout)
 
+        # Button layouts
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(self.mainWindowButton)
         buttonLayout.addWidget(self.buttonEditorButton)
+        buttonLayout.addWidget(self.aboutButton)
 
+        # Adding the button layout to the main layout
         layout = QVBoxLayout()
         layout.addLayout(buttonLayout)
         layout.addWidget(self.imageLabel)
 
+        # Set the button editor to that script
         self.buttonEditor = ButtonEditor(self)
 
+        # Defining the overall layout
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
+        # Resize the window to all of the layouts and widgets added
         self.resize(self.pixmap.width(), self.pixmap.height() + 60)
 
-        self.setMouseTracking(True)
-
+        # Let the app track the users mouse
+        self.setMouseTracking(True) 
         self.lastClickPos = QPoint()
 
-        self.coordinates = np.empty((0, 2), dtype=int)
-        self.lastClickTime = 0
-        self.nodeSize = 35
-        self.handleSize = 15
-        self.rotationHandleDistance = 35
-        self.controlPoints = []
-        self.rotationHandles = []
-        self.nodeAngles = []
-        self.draggingControlPoint = False
+        # Variables
+        self.coordinates = np.empty((0, 2), dtype=int) # Define the coordinate array again
+        self.lastClickTime = 0 # The last time the user clicked on the sceen
+        self.nodeSize = 35 # How large to make the nodes
+        self.handleSize = 15 # How large to make the rotation/control handles
+        self.rotationHandleDistance = 35 # How far the rotation handles are from the node
+        self.controlPoints = [] # Stores all of the control points
+        self.rotationHandles = [] # Stores all of the rotation handles
+        self.nodeAngles = [] # Stores all of the node angles
+
+        # Tell what the user is currently dragging
+        self.draggingControlPoint = False 
         self.draggingNode = False
         self.draggingRotationHandle = False
         self.draggingControlPointIndex = (-1, -1)
         self.draggingNodeIndex = -1
         self.draggingRotationHandleIndex = -1
 
+    # Tell when the user presses a key down
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_R:
+            # Clear the auto
             self.showClearWarning()
+            
 
+
+    # Tell when the user presses a mouse button
     def mousePressEvent(self, event: QMouseEvent):
+        # Get the position of the mouse click
         pos = self.imageLabel.mapFrom(self, event.position().toPoint())
         x, y = pos.x(), pos.y()
         
+        # Tell if the mouse was click ed in the window
         if 0 <= x < self.pixmap.width() and 0 <= y < self.pixmap.height():
+            # If right clicked, add a node
             if event.button() == Qt.RightButton:
                 self.coordinates = np.vstack((self.coordinates, [x, y]))
                 self.nodeAngles.append(0)
@@ -321,7 +347,11 @@ class PathPlanner(QMainWindow):
 
     def showButtonEditor(self):
         self.hide()
-        self.buttonEditor.show()            
+        self.buttonEditor.show()      
+
+    def showAbout(self):
+        self.about_window = AboutWindow()
+        self.about_window.show()     
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

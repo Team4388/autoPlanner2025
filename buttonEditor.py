@@ -2,8 +2,8 @@ import sys
 import os
 import numpy as np
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
-from PySide6.QtCore import Qt, QPoint, QRect
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QKeyEvent
+from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 
 '''
 This window is the button editor
@@ -13,7 +13,8 @@ The button editor takes the path that is made in the path planner and lets the u
 class ButtonEditor(QMainWindow):
     def __init__(self, pathPlanner):
         super().__init__()
-        # Initialization
+
+        # Initialization for the window
         self.setWindowTitle("Button Editor")
         self.pathPlanner = pathPlanner
 
@@ -68,7 +69,8 @@ class ButtonEditor(QMainWindow):
         self.matchTicks = self.matchLength * self.TPS # The amount of ticks in a match
         self.displayTickResolution = 6.25 # The number of ticks to divide the match ticks by
         self.displayTicks = round(self.matchTicks / self.displayTickResolution) # How many ticks to show the user
-
+        self.paused = True # If the user has paused the auto
+        self.playbackSpeed = 0.25  # Speed multiplier for playback
         self.currentFrame = 1 # The frame that is currently selected
         self.keyFrameData = [{"isNode": False, "isButton": False} for _ in range(self.displayTicks)] # Dictionary for every tick including if that tick is a node frame or a button frame
         self.updateKeyFrameData()
@@ -82,10 +84,38 @@ class ButtonEditor(QMainWindow):
         for idx in node_indices:
             self.keyFrameData[idx]["isNode"] = True
 
+        # Start the timer
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.advanceFrame)
+        self.timer.start(int(1000 // (self.TPS * self.playbackSpeed)))
+
         # Initialization
         self.setupFrames()
+        self.updateScene()
         self.updateRectangles()
         self.updateTimeLabel()
+        self.rectangleClicked(0)
+
+    # Tell when the user presses a key down
+    def keyPressEvent(self, event: QKeyEvent):
+        old_frame = self.currentFrame
+        if event.key() == Qt.Key_Right and self.currentFrame < len(self.displayFrames):
+            self.currentFrame += 1
+        elif event.key() == Qt.Key_Left and self.currentFrame > 1:
+            self.currentFrame -= 1
+        elif event.key() == Qt.Key_E:
+            self.paused = not self.paused
+            if self.paused:
+                self.timer.stop()
+            else:
+                self.timer.start(int(1000 // (self.TPS * self.playbackSpeed))) 
+
+        print(self.paused)
+
+        if old_frame != self.currentFrame:
+            self.updateRectangles()
+            self.updateScene()
+            self.updateTimeLabel()
 
     # Updating the key frames with data from the path planner
     def updateKeyFrameData(self):
@@ -170,6 +200,25 @@ class ButtonEditor(QMainWindow):
                             start_angle = self.pathPlanner.nodeAngles[i] if i < len(self.pathPlanner.nodeAngles) else 0
                             end_angle = self.pathPlanner.nodeAngles[i + 1] if i + 1 < len(self.pathPlanner.nodeAngles) else 0
                             angle = self.interpolateAngle(start_angle, end_angle, t)
+                        
+                        total_frames = self.displayTicks
+                        frame_index = self.currentFrame - 1
+                        if 0 <= frame_index < total_frames:
+                            overall_t = frame_index / (total_frames - 1)
+                            num_segments = len(self.pathPlanner.coordinates) - 1
+                            segment_index = min(int(overall_t * num_segments), num_segments - 1)
+                            segment_t = (overall_t * num_segments) - segment_index
+
+                            start = QPoint(self.pathPlanner.coordinates[segment_index][0], self.pathPlanner.coordinates[segment_index][1])
+                            end = QPoint(self.pathPlanner.coordinates[segment_index + 1][0], self.pathPlanner.coordinates[segment_index + 1][1])
+                            control1 = self.pathPlanner.controlPoints[segment_index][0]
+                            control2 = self.pathPlanner.controlPoints[segment_index][1]
+
+                            point = self.pointOnBezierCurve(start, control1, control2, end, segment_t)
+                            
+                            start_angle = self.pathPlanner.nodeAngles[segment_index] if segment_index < len(self.pathPlanner.nodeAngles) else 0
+                            end_angle = self.pathPlanner.nodeAngles[segment_index + 1] if segment_index + 1 < len(self.pathPlanner.nodeAngles) else 0
+                            angle = self.interpolateAngle(start_angle, end_angle, segment_t)
                             self.drawRobot(painter, point, angle)
 
         painter.end() # If you don't end the painter the app crashes
@@ -210,33 +259,40 @@ class ButtonEditor(QMainWindow):
 
     # Update the frames on the bottom of the screen that the user interacts with
     def updateRectangles(self):
-        # Add the key frame widget
-        for i in reversed(range(self.rectanglesLayout.count())):
-            widgetToRemove = self.rectanglesLayout.itemAt(i).widget()
-            self.rectanglesLayout.removeWidget(widgetToRemove)
-            widgetToRemove.setParent(None)
-        
-        #Set the key frames width
-        window_width = self.rectanglesWidget.width()
-        if self.keyFrameData:
-            rect_width = window_width / len(self.keyFrameData) 
-        
-        rect_height = 100 # Adjustable key frame height
-        for index, frame in enumerate(self.keyFrameData):
-            rectWidget = QWidget()
-            rectWidget.setFixedSize(rect_width, rect_height)
+        # Clear existing rectangles
+        while self.rectanglesLayout.count():
+            item = self.rectanglesLayout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        # Calculate the width of each rectangle
+        total_width = self.width() - 80 
+        rect_width = max(1, total_width // self.displayTicks)
+
+        # Create new rectangles
+        for i in range(self.displayTicks):
+            rect = QWidget()
+            rect.setFixedSize(rect_width, 100) 
             
-            # Set the colors of the frames
-            if frame["isNode"]:
-                rectWidget.setStyleSheet("background-color: yellow;")
+            # Set the color based on frame type
+            if i == self.currentFrame - 1:
+                color = "red"
+            elif self.keyFrameData[i]["isNode"]:
+                color = "yellow"
+            elif self.keyFrameData[i]["isButton"]:
+                color = "blue"
             else:
-                if index % 2 == 0:
-                    rectWidget.setStyleSheet("background-color: #ADD8E6;")
-                else:
-                    rectWidget.setStyleSheet("background-color: #00008B;")
+                color = "#ADD8E6" if i % 2 == 0 else "#00008B"
+            rect.setStyleSheet(f"background-color: {color};")
             
-            rectWidget.mousePressEvent = lambda event, idx=index: self.rectangleClicked(idx)
-            self.rectanglesLayout.addWidget(rectWidget)
+            # Connect the click event
+            rect.mousePressEvent = lambda event, index=i: self.rectangleClicked(index)
+            self.rectanglesLayout.addWidget(rect)
+
+        # Force layout update
+        self.rectanglesWidget.updateGeometry()
+        self.rectanglesLayout.update()
 
     # Set the current frame to the frame that the user clicked
     def rectangleClicked(self, index):
@@ -256,6 +312,19 @@ class ButtonEditor(QMainWindow):
         seconds = int(current_time % 60)
         milliseconds = int((current_time % 1) * 1000)
         self.timeLabel.setText(f"{minutes}:{seconds:02d}.{milliseconds:03d} / {self.matchLength:.3f} sec")
+
+    # The auto playback
+    def advanceFrame(self):
+        if not self.paused:
+            if self.currentFrame < len(self.displayFrames):
+                self.currentFrame += 1
+            else:
+                self.currentFrame = 1  # Loop back to the start
+
+            # Update
+            self.updateRectangles()
+            self.updateScene()
+            self.updateTimeLabel()
 
 # App initialization
 if __name__ == "__main__":
